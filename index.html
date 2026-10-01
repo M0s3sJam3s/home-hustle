@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home & Hustle Planner</title>
+<style>
+:root{--bg:#f5f7f4;--c:#fff;--t:#1f2a24;--m:#6b7a70;--a:#2f7d4f;--w:#d9822b;--r:#c0392b;--b:#dfe6e0}
+@media(prefers-color-scheme:dark){:root{--bg:#141a16;--c:#1e2621;--t:#e8efe9;--m:#93a398;--b:#2d3830}}
+*{box-sizing:border-box}
+body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--t);padding-bottom:76px}
+header{padding:16px;background:var(--a);color:#fff}
+header h1{margin:0;font-size:18px}header small{opacity:.85}
+main{max-width:760px;margin:auto;padding:12px}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}
+h2{margin:0 0 8px;font-size:16px}h3{margin:10px 0 4px;font-size:14px;color:var(--m)}
+input,select,button,textarea{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--t)}
+button{background:var(--a);color:#fff;border:0;cursor:pointer}
+button.g{background:var(--b);color:var(--t)}button.d{background:var(--r)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.row>input,.row>select{flex:1;min-width:90px}
+.it{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b)}
+.it:last-child{border:0}.it .x{flex:1}.done{text-decoration:line-through;color:var(--m)}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;color:#fff}
+.ok{background:var(--a)}.low{background:var(--w)}.out{background:var(--r)}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.kpi div{background:var(--bg);padding:8px;border-radius:8px}.kpi b{display:block;font-size:17px}
+.kpi span{font-size:12px;color:var(--m)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);border-top:1px solid var(--b)}
+nav button{flex:1;background:none;color:var(--m);padding:10px 2px;font-size:11px;border-radius:0}
+nav button.on{color:var(--a);font-weight:700}
+#ban{position:fixed;top:0;left:0;right:0;z-index:9;display:none;background:var(--w);color:#fff;padding:14px;text-align:center}
+.msg{padding:8px 10px;border-radius:10px;margin:6px 0;white-space:pre-wrap}
+.me{background:var(--a);color:#fff;margin-left:20%}.ai{background:var(--bg)}
+.mg{display:grid;grid-template-columns:90px 1fr 1fr 1fr;gap:4px;align-items:center;font-size:13px}
+.mg input{width:100%;padding:6px}
+</style></head>
+<body>
+<div id="ban"></div>
+<header><h1>🏡 Home & Hustle Planner</h1><small id="dt"></small></header>
+<main id="v"></main>
+<nav id="nav"></nav>
+<script>
+const D=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const dayIdx=()=>(new Date().getDay()+6)%7;
+const def={tasks:[],stock:[],menu:{},shop:[],money:0,biz:[],chat:[],fired:{},set:{cur:'MK',key:'',morning:'07:00',prices:[500,450,400,300,250,200]}};
+let S;try{S=Object.assign({},def,JSON.parse(localStorage.getItem('hhp')||'{}'))}catch(e){S=def}
+S.set=Object.assign({},def.set,S.set);
+const save=()=>{try{localStorage.setItem('hhp',JSON.stringify(S))}catch(e){}};
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>S.set.cur+' '+(+n||0).toLocaleString();
+const num=id=>parseFloat($(id).value)||0;
+const val=id=>$(id).value.trim();
+let tab='today';
+const TABS=[['today','🏠','Today'],['week','📅','Week'],['stock','📦','Stock'],['menu','🍲','Menu'],['budget','💰','Budget'],['biz','🥜','Business'],['ai','🤖','AI']];
+$('nav').innerHTML=TABS.map(t=>`<button id="n_${t[0]}" onclick="go('${t[0]}')">${t[1]}<br>${t[2]}</button>`).join('');
+function go(t){tab=t;TABS.forEach(x=>$('n_'+x[0]).classList.toggle('on',x[0]==t));render()}
+function render(){$('dt').textContent=new Date().toDateString();$('v').innerHTML=V[tab]();if(tab=='ai')chatScroll()}
+const st=i=>i.qty<=0?['out','Out']:i.qty<=i.min?['low','Low']:['ok','OK'];
+const lowItems=()=>S.stock.filter(i=>i.qty<=i.min);
+const todayTasks=()=>S.tasks.filter(t=>t.day==dayIdx()).sort((a,b)=>a.time.localeCompare(b.time));
+const todayMenu=()=>S.menu[dayIdx()]||{};
+const bizStats=(rows)=>{const r=rows||S.biz;const s={n:r.length,cups:0,kgIn:0,kgOut:0,rev:0,exp:0,unpaid:0};
+r.forEach(x=>{s.kgIn+=x.kgIn||0;s.kgOut+=x.kgOut||0;s.cups+=Object.values(x.cups||{}).reduce((a,b)=>a+b,0);s.rev+=x.amt||0;s.exp+=x.exp||0;if(!x.paid)s.unpaid+=x.amt||0});
+s.profit=s.rev-s.exp;s.yield=s.kgIn?Math.round(s.kgOut/s.kgIn*100):0;return s};
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const weekAgo=()=>new Date(Date.now()-6*864e5).toISOString().slice(0,10);
+
+const V={
+today(){const tt=todayTasks(),m=todayMenu(),lo=lowItems(),b=bizStats(S.biz.filter(x=>x.date==todayStr()));
+return alarmStatus()+`<div class="card"><h2>${D[dayIdx()]}'s plan</h2>${tt.map(taskRow).join('')||'<small>No plans today. Add some in Week.</small>'}</div>
+<div class="card"><h2>Menu today</h2>🌅 ${esc(m.b||'—')}<br>☀️ ${esc(m.l||'—')}<br>🌙 ${esc(m.d||'—')}</div>
+<div class="card"><h2>Need to buy at home</h2>${lo.map(i=>`<div class="it"><span class="x">${esc(i.name)} (${i.qty} ${esc(i.unit)})</span><span class="tag ${st(i)[0]}">${st(i)[1]}</span></div>`).join('')||'<small>Everything is stocked 🎉</small>'}</div>
+<div class="card"><h2>Business today</h2><div class="kpi"><div><b>${b.cups}</b><span>Cups ground</span></div><div><b>${fmt(b.rev)}</b><span>Income</span></div><div><b>${fmt(b.profit)}</b><span>Profit</span></div></div></div>
+<div class="card"><button onclick="askNotif()">🔔 Test alarm & enable notifications</button> <small>Keep this page open for alarms to ring.</small></div>`},
+week(){return `<div class="card"><h2>Add work / plan</h2><div class="row"><input id="tt" placeholder="What needs to be done?"><select id="td">${D.map((d,i)=>`<option value="${i}" ${i==dayIdx()?'selected':''}>${d}</option>`).join('')}</select><input id="tm" type="time" value="08:00"><button onclick="addTask()">Add</button></div></div>
+${D.map((d,i)=>{const l=S.tasks.filter(t=>t.day==i).sort((a,b)=>a.time.localeCompare(b.time));return `<div class="card"><h2>${d}${i==dayIdx()?' (today)':''}</h2>${l.map(taskRow).join('')||'<small>Nothing planned</small>'}</div>`}).join('')}`},
+stock(){return `<div class="card"><h2>Add household item</h2><div class="row"><input id="sn" placeholder="Item (e.g. Rice)"><input id="sq" type="number" placeholder="Qty"><input id="sm" type="number" placeholder="Alert at"><input id="su" placeholder="Unit (kg, L…)"><button onclick="addStock()">Add</button></div></div>
+<div class="card"><h2>At home</h2>${S.stock.map(i=>`<div class="it"><span class="x">${esc(i.name)}<br><small>${i.qty} ${esc(i.unit)} · alert at ${i.min}</small></span><span class="tag ${st(i)[0]}">${st(i)[1]}</span><button class="g" onclick="qty('${i.id}',-1)">−</button><button class="g" onclick="qty('${i.id}',1)">+</button><button class="d" onclick="del('stock','${i.id}')">✕</button></div>`).join('')||'<small>No items yet</small>'}
+<div class="row" style="margin-top:8px"><button onclick="lowToShop()">➕ Add low/out items to shopping list</button></div></div>`},
+menu(){return `<div class="card"><h2>Weekly menu</h2><div class="mg"><b></b><b>Breakfast</b><b>Lunch</b><b>Dinner</b>${D.map((d,i)=>{const m=S.menu[i]||{};return `<span>${d.slice(0,3)}${i==dayIdx()?' •':''}</span>`+['b','l','d'].map(k=>`<input value="${esc(m[k]||'')}" onchange="setMenu(${i},'${k}',this.value)">`).join('')}).join('')}</div></div>`},
+budget(){const tot=S.shop.reduce((a,x)=>a+x.cost,0),buy=S.shop.filter(x=>x.bought).reduce((a,x)=>a+x.cost,0);
+return `<div class="card"><h2>My money</h2><div class="row"><input id="mo" type="number" value="${S.money||''}" placeholder="Money available"><button onclick="S.money=num('mo');save();render()">Save</button></div>
+<div class="kpi"><div><b>${fmt(S.money)}</b><span>Available</span></div><div><b>${fmt(tot)}</b><span>Shopping total</span></div><div><b style="color:${S.money-tot<0?'var(--r)':'var(--a)'}">${fmt(S.money-tot)}</b><span>After buying all</span></div></div></div>
+<div class="card"><h2>What I must buy</h2><div class="row"><input id="bn" placeholder="Item"><input id="bc" type="number" placeholder="Cost"><button onclick="addShop()">Add</button></div>
+${S.shop.map(x=>`<div class="it"><input type="checkbox" ${x.bought?'checked':''} onchange="tog('shop','${x.id}','bought')"><span class="x ${x.bought?'done':''}">${esc(x.name)}</span>${fmt(x.cost)}<button class="d" onclick="del('shop','${x.id}')">✕</button></div>`).join('')||'<small>Nothing to buy</small>'}
+<small>Bought so far: ${fmt(buy)}</small></div>`},
+biz(){const a=bizStats(),w=bizStats(S.biz.filter(x=>x.date>=weekAgo())),mx=Math.max(...S.set.prices);
+return `<div class="card"><h2>Record grinding job</h2><div class="row"><input id="bcu" placeholder="Customer name"></div>
+<h3>Tap + for each cup</h3>${S.set.prices.map(p=>`<div class="it"><span class="x">${p==mx?'Full cup':'Part cup'} — ${fmt(p)}</span><button class="g" onclick="cupAdj(${p},-1)">−</button><b id="c_${p}" style="min-width:26px;text-align:center">${cart[p]||0}</b><button onclick="cupAdj(${p},1)">+</button></div>`).join('')}
+<div class="kpi" style="margin:8px 0"><div><b id="ctot">${fmt(cartTotal())}</b><span>Total to charge</span></div></div>
+<div class="row"><input id="bex" type="number" placeholder="Expenses (optional)"><label><input type="checkbox" id="bpd" checked> Paid</label><button onclick="addBiz()">Save job</button></div></div>
+<div class="card"><h2>Last 7 days</h2><div class="kpi"><div><b>${w.cups}</b><span>Cups ground</span></div><div><b>${fmt(w.rev)}</b><span>Income</span></div><div><b>${fmt(w.profit)}</b><span>Profit</span></div><div><b>${fmt(a.unpaid)}</b><span>Unpaid (all time)</span></div></div></div>
+<div class="card"><h2>Records</h2>${S.biz.slice().reverse().slice(0,30).map(x=>`<div class="it"><span class="x">${esc(x.cust||'Customer')} <small>${x.date} · ${cupTxt(x)}</small></span>${fmt(x.amt)} <span class="tag ${x.paid?'ok':'out'}" onclick="tog('biz','${x.id}','paid')">${x.paid?'Paid':'Owes'}</span><button class="d" onclick="del('biz','${x.id}')">✕</button></div>`).join('')||'<small>No records yet</small>'}</div>`},
+ai(){return `<div class="card"><h2>🤖 Business & home assistant</h2><div id="chat">${S.chat.map(m=>`<div class="msg ${m.r=='user'?'me':'ai'}">${esc(m.c)}</div>`).join('')||'<small>Ask: "How was my week?", "What should I buy?", "Who owes me?"</small>'}</div>
+<div class="row" style="margin-top:8px"><input id="q" placeholder="Ask anything…" onkeydown="if(event.key=='Enter')ask()"><button onclick="ask()">Send</button></div></div>
+<div class="card"><h2>Settings</h2><div class="row"><input id="cu" value="${esc(S.set.cur)}" placeholder="Currency"><input id="mt" type="time" value="${S.set.morning}"></div>
+<div class="row"><input id="pr" value="${S.set.prices.join(', ')}" placeholder="Cup prices, e.g. 500, 450, 400"></div>
+<div class="row"><input id="gk" type="password" value="${esc(S.set.key)}" placeholder="Groq API key (optional, for smart AI)"></div>
+<button onclick="saveSet()">Save settings</button> <button class="d" onclick="if(confirm('Delete ALL data?')){localStorage.removeItem('hhp');location.reload()}">Reset</button>
+<p><small>Without a key, the assistant uses built-in analysis of your data. The key is stored only in this browser.</small></p></div>`}
+};
+function taskRow(t){return `<div class="it"><input type="checkbox" ${t.done?'checked':''} onchange="tog('tasks','${t.id}','done')"><span class="x ${t.done?'done':''}">${esc(t.time)} — ${esc(t.title)}</span><button class="d" onclick="del('tasks','${t.id}')">✕</button></div>`}
+function addTask(){if(!val('tt'))return;S.tasks.push({id:uid(),title:val('tt'),day:+$('td').value,time:$('tm').value||'08:00',done:false});save();render()}
+function addStock(){if(!val('sn'))return;S.stock.push({id:uid(),name:val('sn'),qty:num('sq'),min:num('sm'),unit:val('su')});save();render()}
+function qty(id,d){const i=S.stock.find(x=>x.id==id);i.qty=Math.max(0,i.qty+d);save();render()}
+function setMenu(d,k,v){S.menu[d]=S.menu[d]||{};S.menu[d][k]=v;save()}
+function addShop(){if(!val('bn'))return;S.shop.push({id:uid(),name:val('bn'),cost:num('bc'),bought:false});save();render()}
+function lowToShop(){lowItems().forEach(i=>{if(!S.shop.some(s=>s.name=='Restock: '+i.name))S.shop.push({id:uid(),name:'Restock: '+i.name,cost:0,bought:false})});save();go('budget')}
+let cart={};
+const cartTotal=()=>Object.entries(cart).reduce((t,[p,n])=>t+p*n,0);
+const cupTxt=x=>x.cups?Object.entries(x.cups).filter(e=>e[1]).sort((a,b)=>b[0]-a[0]).map(e=>e[1]+'×'+e[0]).join(', '):(x.kgIn?x.kgIn+'kg':'');
+function cupAdj(p,d){cart[p]=Math.max(0,(cart[p]||0)+d);$('c_'+p).textContent=cart[p];$('ctot').textContent=fmt(cartTotal())}
+function addBiz(){const amt=cartTotal();if(!amt){alert('Tap + to add at least one cup');return}
+S.biz.push({id:uid(),date:todayStr(),cust:val('bcu'),cups:Object.assign({},cart),amt,exp:num('bex'),paid:$('bpd').checked});cart={};save();render()}
+function tog(k,id,f){const o=S[k].find(x=>x.id==id);o[f]=!o[f];save();render()}
+function del(k,id){S[k]=S[k].filter(x=>x.id!=id);save();render()}
+function saveSet(){S.set.cur=val('cu')||'MK';S.set.morning=$('mt').value||'07:00';S.set.key=val('gk');const pr=val('pr').split(/[ ,]+/).map(Number).filter(x=>x>0).sort((a,b)=>b-a);if(pr.length)S.set.prices=pr;save();alert('Saved');render()}
+
+/* Alarms & notifications */
+function alarmStatus(){const n=new Date(),mins=n.getHours()*60+n.getMinutes();
+const nx=todayTasks().filter(t=>!t.done&&mm(t.time)>=mins).sort((a,b)=>mm(a.time)-mm(b.time))[0];
+const perm='Notification' in window?Notification.permission:'unsupported',ok=perm=='granted';
+return `<div class="card" style="border-color:${ok?'var(--a)':'var(--w)'}"><h2>⏰ Alarm status</h2>
+Clock now: <b>${n.toTimeString().slice(0,5)}</b><br>
+Next alarm: <b>${nx?esc(nx.title)+' at '+nx.time+' (in '+(mm(nx.time)-mins)+' min)':'none today'}</b><br>
+Notifications: <b>${perm}</b>${ok?'':' — press the button to allow'}<br>
+Sound: <b>${AC&&AC.state=='running'?'ready':'not unlocked — tap anywhere once'}</b><br>
+<div class="row" style="margin-top:8px"><button onclick="askNotif()">🔔 Enable & test alarm</button></div>
+<small>Keep this tab open. Alarms can't ring if the computer sleeps or the browser is closed.</small></div>`}
+
+let AC=null,ringT=null;
+function audio(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state=='suspended')AC.resume()}catch(e){}return AC}
+['click','touchstart','keydown'].forEach(e=>document.addEventListener(e,audio,{passive:true}));
+function beep(){const a=audio();if(!a)return;[0,.35,.7,1.05].forEach(t=>{const o=a.createOscillator(),g=a.createGain();o.type='square';o.frequency.value=880;o.connect(g);g.connect(a.destination);g.gain.value=.25;o.start(a.currentTime+t);o.stop(a.currentTime+t+.2)})}
+function stopRing(){clearInterval(ringT);ringT=null;$('ban').style.display='none';document.title='Home & Hustle Planner'}
+function notify(title,body){try{if(!('Notification' in window)||Notification.permission!='granted')return;
+if(navigator.serviceWorker&&navigator.serviceWorker.controller)navigator.serviceWorker.ready.then(r=>r.showNotification(title,{body,vibrate:[300,100,300],requireInteraction:true}));
+else new Notification(title,{body})}catch(e){}}
+function alarm(title,body){beep();clearInterval(ringT);ringT=setInterval(beep,4000);navigator.vibrate&&navigator.vibrate([300,100,300]);
+document.title='⏰ '+title;const b=$('ban');b.style.display='block';
+b.innerHTML=`<b>${esc(title)}</b><br>${esc(body).replace(/\n/g,'<br>')}<br><button class="g" style="margin-top:8px" onclick="stopRing()">Dismiss</button>`;notify(title,body)}
+async function askNotif(){let p='not supported';if('Notification' in window)p=await Notification.requestPermission();audio();
+alarm('Test alarm','Notifications: '+p+(p=='granted'?'':'\nAllow notifications for this site in your browser settings.'))}
+function summary(){const tt=todayTasks().filter(t=>!t.done),m=todayMenu(),lo=lowItems();
+return `Plans: ${tt.map(t=>t.time+' '+t.title).join('; ')||'none'}\nMenu: ${m.b||'-'} / ${m.l||'-'} / ${m.d||'-'}\nLow at home: ${lo.map(i=>i.name).join(', ')||'nothing'}`}
+const mm=s=>{const [a,b]=(s||'0:0').split(':');return a*60+ +b};
+function tick(){const n=new Date(),k=n.toDateString(),mins=n.getHours()*60+n.getMinutes();
+todayTasks().forEach(t=>{const d=mins-mm(t.time);if(!t.done&&d>=0&&d<=10&&S.fired[t.id]!=k){S.fired[t.id]=k;alarm('⏰ '+t.title,'Scheduled for '+t.time)}});
+const d=mins-mm(S.set.morning);if(d>=0&&d<=60&&S.fired.m!=k){S.fired.m=k;alarm('Good morning — '+D[dayIdx()],summary())}save()}
+setInterval(tick,10000);setInterval(()=>{if(tab=='today'&&!document.hidden)render()},20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick()});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* AI */
+function context(){const a=bizStats(),w=bizStats(S.biz.filter(x=>x.date>=weekAgo()));
+return JSON.stringify({today:D[dayIdx()],currency:S.set.cur,plans_today:todayTasks(),menu_today:todayMenu(),low_stock:lowItems(),shopping:S.shop,money:S.money,business_week:w,business_all:a,owing:S.biz.filter(x=>!x.paid).map(x=>({cust:x.cust,amt:x.amt,date:x.date})),recent_jobs:S.biz.slice(-20)})}
+function local(q){q=q.toLowerCase();const a=bizStats(),w=bizStats(S.biz.filter(x=>x.date>=weekAgo()));
+if(/owe|unpaid|debt/.test(q)){const o=S.biz.filter(x=>!x.paid);return o.length?'Unpaid jobs:\n'+o.map(x=>`• ${x.cust||'Customer'} (${x.date}): ${fmt(x.amt)}`).join('\n')+`\nTotal: ${fmt(a.unpaid)}`:'Nobody owes you. 🎉'}
+if(/buy|shop|stock|home/.test(q)){const lo=lowItems();return (lo.length?'Low or out at home: '+lo.map(i=>`${i.name} (${i.qty}${i.unit})`).join(', '):'Home stock is fine.')+`\nYou have ${fmt(S.money)}; shopping list totals ${fmt(S.shop.reduce((s,x)=>s+x.cost,0))}.`}
+if(/menu|eat|food|cook/.test(q)){const m=todayMenu();return `Today: ${m.b||'-'} / ${m.l||'-'} / ${m.d||'-'}`}
+if(/plan|task|today|schedule/.test(q))return summary();
+const lossy=w.yield&&w.yield<80?'\n⚠ Flour yield is below 80% — check for husk/moisture or machine loss.':'';
+return `Last 7 days: ${w.n} jobs, ${w.cups} cups ground.\nIncome ${fmt(w.rev)}, expenses ${fmt(w.exp)}, profit ${fmt(w.profit)}.\nAll-time unpaid: ${fmt(a.unpaid)}.${lossy}\n(Add a Groq API key in Settings for deeper answers.)`}
+async function ask(){const q=val('q');if(!q)return;S.chat.push({r:'user',c:q});$('q').value='';let ans;
+if(S.set.key){S.chat.push({r:'assistant',c:'Thinking…'});render();
+try{const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+S.set.key},body:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'system',content:'You are a practical assistant for a Malawian household and a small groundnut-grinding (groundnut flour) business. Use the JSON data. Be concise, give numbers, spot problems (low yield, unpaid customers, overspending) and suggest actions.\nDATA: '+context()},...S.chat.filter(m=>m.c!='Thinking…').slice(-8).map(m=>({role:m.r,content:m.c}))]})});
+const j=await r.json();ans=j.choices?.[0]?.message?.content||('API error: '+(j.error?.message||'unknown'))}catch(e){ans=local(q)}
+S.chat.pop()}else ans=local(q);
+S.chat.push({r:'assistant',c:ans});S.chat=S.chat.slice(-30);save();render()}
+function chatScroll(){window.scrollTo(0,document.body.scrollHeight)}
+go('today');
+</script></body></html>
