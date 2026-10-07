@@ -37,16 +37,17 @@ nav button.on{color:var(--a);font-weight:700}
 </style></head>
 <body>
 <div id="ban"></div>
-<header><h1>🏡 Home & Hustle Planner</h1><small id="dt"></small></header>
+<header><h1>🏡 Home & Hustle Planner</h1><small id="dt"></small> · <small id="sync">local only</small></header>
 <main id="v"></main>
 <nav id="nav"></nav>
 <script>
 const D=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const dayIdx=()=>(new Date().getDay()+6)%7;
-const def={tasks:[],stock:[],menu:{},shop:[],money:0,biz:[],chat:[],fired:{},set:{cur:'MK',key:'',morning:'07:00',prices:[500,450,400,300,250,200]}};
+const def={tasks:[],stock:[],menu:{},shop:[],money:0,biz:[],chat:[],fired:{},set:{cur:'MK',key:'',morning:'07:00',prices:[500,450,400,300,250,200],server:'',secret:''}};
 let S;try{S=Object.assign({},def,JSON.parse(localStorage.getItem('hhp')||'{}'))}catch(e){S=def}
 S.set=Object.assign({},def.set,S.set);
-const save=()=>{try{localStorage.setItem('hhp',JSON.stringify(S))}catch(e){}};
+const persist=()=>{try{localStorage.setItem('hhp',JSON.stringify(S))}catch(e){}};
+const save=()=>{S.dirty=true;persist();schedulePush()};
 const $=id=>document.getElementById(id);
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -97,6 +98,9 @@ return `<div class="card"><h2>Record grinding job</h2><div class="row"><input id
 ai(){return `<div class="card"><h2>🤖 Business & home assistant</h2><div id="chat">${S.chat.map(m=>`<div class="msg ${m.r=='user'?'me':'ai'}">${esc(m.c)}</div>`).join('')||'<small>Ask: "How was my week?", "What should I buy?", "Who owes me?"</small>'}</div>
 <div class="row" style="margin-top:8px"><input id="q" placeholder="Ask anything…" onkeydown="if(event.key=='Enter')ask()"><button onclick="ask()">Send</button></div></div>
 <div class="card"><h2>Settings</h2><div class="row"><input id="cu" value="${esc(S.set.cur)}" placeholder="Currency"><input id="mt" type="time" value="${S.set.morning}"></div>
+<h3>Cloud sync & Telegram reminders</h3>
+<div class="row"><input id="sv" value="${esc(S.set.server)}" placeholder="Server URL, e.g. https://home-hustle-api.onrender.com"></div>
+<div class="row"><input id="sk" type="password" value="${esc(S.set.secret)}" placeholder="Server secret key (APP_SECRET)"><button onclick="syncNow()">Sync now</button></div>
 <div class="row"><input id="pr" value="${S.set.prices.join(', ')}" placeholder="Cup prices, e.g. 500, 450, 400"></div>
 <div class="row"><input id="gk" type="password" value="${esc(S.set.key)}" placeholder="Groq API key (optional, for smart AI)"></div>
 <button onclick="saveSet()">Save settings</button> <button class="d" onclick="if(confirm('Delete ALL data?')){localStorage.removeItem('hhp');location.reload()}">Reset</button>
@@ -117,7 +121,35 @@ function addBiz(){const amt=cartTotal();if(!amt){alert('Tap + to add at least on
 S.biz.push({id:uid(),date:todayStr(),cust:val('bcu'),cups:Object.assign({},cart),amt,exp:num('bex'),paid:$('bpd').checked});cart={};save();render()}
 function tog(k,id,f){const o=S[k].find(x=>x.id==id);o[f]=!o[f];save();render()}
 function del(k,id){S[k]=S[k].filter(x=>x.id!=id);save();render()}
-function saveSet(){S.set.cur=val('cu')||'MK';S.set.morning=$('mt').value||'07:00';S.set.key=val('gk');const pr=val('pr').split(/[ ,]+/).map(Number).filter(x=>x>0).sort((a,b)=>b-a);if(pr.length)S.set.prices=pr;save();alert('Saved');render()}
+function saveSet(){S.set.cur=val('cu')||'MK';S.set.morning=$('mt').value||'07:00';S.set.key=val('gk');const pr=val('pr').split(/[ ,]+/).map(Number).filter(x=>x>0).sort((a,b)=>b-a);if(pr.length)S.set.prices=pr;
+const sv=val('sv').replace(/\/+$/,''),sk=val('sk'),ch=sv!=S.set.server||sk!=S.set.secret;S.set.server=sv;S.set.secret=sk;
+if(ch){S.synced=0;persist();syncNow()}else save();alert('Saved');render()}
+
+/* Cloud sync */
+const cfg=()=>S.set.server&&S.set.secret;
+const isEmpty=x=>!['tasks','stock','shop','biz'].some(k=>(x[k]||[]).length)&&!Object.keys(x.menu||{}).length;
+const setSync=t=>{const e=$('sync');if(e)e.textContent=t};
+const hmNow=()=>new Date().toTimeString().slice(0,5);
+function clean(){const c=JSON.parse(JSON.stringify(S));['fired','chat','dirty','synced'].forEach(k=>delete c[k]);['server','secret','key'].forEach(k=>delete c.set[k]);return c}
+async function api(method,body){const r=await fetch(S.set.server.replace(/\/+$/,'')+'/api/state',{method,headers:{'Content-Type':'application/json','x-api-key':S.set.secret},body:body?JSON.stringify(body):undefined});
+if(!r.ok)throw new Error(r.status==401?'wrong secret key':'server error '+r.status);return r.json()}
+let pushT=null;
+function schedulePush(){if(!cfg()||!S.synced)return;clearTimeout(pushT);pushT=setTimeout(push,2000);setSync('⏳ saving…')}
+async function push(){if(!cfg())return;try{const j=await api('PUT',{state:clean()});S.synced=j.updated;S.dirty=false;persist();setSync('☁️ synced '+hmNow())}catch(e){setSync('⚠ '+(e.message.includes('Failed')?'offline, will retry':e.message))}}
+function apply(srv,up){['tasks','stock','menu','shop','money','biz'].forEach(k=>{if(k in srv)S[k]=srv[k]});
+S.set=Object.assign({},S.set,srv.set||{},{server:S.set.server,secret:S.set.secret,key:S.set.key});S.synced=up;S.dirty=false;persist();render();setSync('☁️ synced '+hmNow())}
+async function syncNow(){if(!cfg()){setSync('local only');return}
+try{setSync('⏳ connecting…');const j=await api('GET'),srv=j.state||{},up=j.updated||0;
+if(isEmpty(srv)){if(!isEmpty(S)||S.dirty){await push()}else{S.synced=up||1;persist();setSync('☁️ connected')}return}
+if(!S.synced&&!isEmpty(S)){if(confirm('The server already has data.\n\nOK = use the SERVER data\nCancel = upload THIS device data instead'))apply(srv,up);else await push();return}
+if(S.dirty){if(up>(S.synced||0)){if(confirm('Another device changed the data.\n\nOK = use the SERVER data\nCancel = keep THIS device data'))apply(srv,up);else await push()}else await push();return}
+if(up>(S.synced||0))apply(srv,up);else setSync('☁️ synced '+hmNow())}
+catch(e){setSync('⚠ '+(e.message.includes('Failed')?'offline, will retry':e.message))}}
+const typing=()=>['INPUT','SELECT','TEXTAREA'].includes(document.activeElement&&document.activeElement.tagName);
+setInterval(()=>{if(!document.hidden&&!typing())syncNow()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!typing())syncNow()});
+window.addEventListener('online',syncNow);
+setTimeout(syncNow,1500);
 
 /* Alarms & notifications */
 function alarmStatus(){const n=new Date(),mins=n.getHours()*60+n.getMinutes();
@@ -149,7 +181,7 @@ return `Plans: ${tt.map(t=>t.time+' '+t.title).join('; ')||'none'}\nMenu: ${m.b|
 const mm=s=>{const [a,b]=(s||'0:0').split(':');return a*60+ +b};
 function tick(){const n=new Date(),k=n.toDateString(),mins=n.getHours()*60+n.getMinutes();
 todayTasks().forEach(t=>{const d=mins-mm(t.time);if(!t.done&&d>=0&&d<=10&&S.fired[t.id]!=k){S.fired[t.id]=k;alarm('⏰ '+t.title,'Scheduled for '+t.time)}});
-const d=mins-mm(S.set.morning);if(d>=0&&d<=60&&S.fired.m!=k){S.fired.m=k;alarm('Good morning — '+D[dayIdx()],summary())}save()}
+const d=mins-mm(S.set.morning);if(d>=0&&d<=60&&S.fired.m!=k){S.fired.m=k;alarm('Good morning — '+D[dayIdx()],summary())}persist()}
 setInterval(tick,10000);setInterval(()=>{if(tab=='today'&&!document.hidden)render()},20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 
