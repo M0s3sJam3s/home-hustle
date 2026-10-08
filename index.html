@@ -87,7 +87,7 @@ return `<div class="card"><h2>This week's plans</h2><div class="kpi"><div><b>${d
 const V={
 today(){const tt=todayTasks(),m=todayMenu(),lo=lowItems(),b=bizStats(S.biz.filter(x=>x.date==todayStr()));
 return alarmStatus()+`<div class="card"><h2>${D[dayIdx()]}'s plan <small>${tt.filter(t=>getSt(t,todayStr())=='done').length}/${tt.length} done</small></h2>${tt.map(t=>taskRow(t,todayStr())).join('')||'<small>No plans today. Add some in Week.</small>'}</div>
-<div class="card"><h2>Menu today</h2>🌅 ${esc(m.b||'—')}<br>☀️ ${esc(m.l||'—')}<br>🌙 ${esc(m.d||'—')}</div>
+<div class="card"><h2>Menu today <button class="g" style="float:right;padding:4px 10px" onclick="editDay=dayIdx();go('menu')">✏️ Edit</button></h2>🌅 ${esc(m.b||'—')}<br>☀️ ${esc(m.l||'—')}<br>🌙 ${esc(m.d||'—')}</div>
 <div class="card"><h2>Need to buy at home</h2>${lo.map(i=>`<div class="it"><span class="x">${esc(i.name)} (${i.qty} ${esc(i.unit)})</span><span class="tag ${st(i)[0]}">${st(i)[1]}</span></div>`).join('')||'<small>Everything is stocked 🎉</small>'}</div>
 <div class="card"><h2>Business today</h2><div class="kpi"><div><b>${b.cups}</b><span>Cups ground</span></div><div><b>${fmt(b.rev)}</b><span>Income</span></div><div><b>${fmt(b.profit)}</b><span>Profit</span></div></div></div>
 <div class="card"><button onclick="askNotif()">🔔 Test alarm & enable notifications</button> <small>Keep this page open for alarms to ring.</small></div>`},
@@ -96,7 +96,16 @@ ${D.map((d,i)=>{const l=S.tasks.filter(t=>t.day==i).sort((a,b)=>a.time.localeCom
 stock(){return `<div class="card"><h2>Add household item</h2><div class="row"><input id="sn" placeholder="Item (e.g. Rice)"><input id="sq" type="number" placeholder="Qty"><input id="sm" type="number" placeholder="Alert at"><input id="su" placeholder="Unit (kg, L…)"><button onclick="addStock()">Add</button></div></div>
 <div class="card"><h2>At home</h2>${S.stock.map(i=>`<div class="it"><span class="x">${esc(i.name)}<br><small>${i.qty} ${esc(i.unit)} · alert at ${i.min}</small></span><span class="tag ${st(i)[0]}">${st(i)[1]}</span><button class="g" onclick="qty('${i.id}',-1)">−</button><button class="g" onclick="qty('${i.id}',1)">+</button><button class="d" onclick="del('stock','${i.id}')">✕</button></div>`).join('')||'<small>No items yet</small>'}
 <div class="row" style="margin-top:8px"><button onclick="lowToShop()">➕ Add low/out items to shopping list</button></div></div>`},
-menu(){return `<div class="card"><h2>Weekly menu</h2><div class="mg"><b></b><b>Breakfast</b><b>Lunch</b><b>Dinner</b>${D.map((d,i)=>{const m=S.menu[i]||{};return `<span>${d.slice(0,3)}${i==dayIdx()?' •':''}</span>`+['b','l','d'].map(k=>`<input value="${esc(m[k]||'')}" onchange="setMenu(${i},'${k}',this.value)">`).join('')}).join('')}</div></div>`},
+menu(){const M=[['b','🌅 Breakfast'],['l','☀️ Lunch'],['d','🌙 Dinner']],has=m=>m&&(m.b||m.l||m.d),
+all=[...new Set(Object.values(S.menu).flatMap(m=>Object.values(m||{})).filter(Boolean))],set=D.filter((_,i)=>has(S.menu[i])).length;
+return `<datalist id="ml">${all.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+<div class="card"><h2>🍲 Weekly menu <small>${set}/7 days planned</small></h2><small>Tap ✏️ Edit on a day, type what will be served, then Save. Meals you used before appear as suggestions.</small></div>`+
+D.map((dn,i)=>{const m=S.menu[i]||{},ed=editDay===i,td=i==dayIdx();
+const body=ed?M.map(([k,l])=>`<div class="row"><label style="width:105px;align-self:center">${l}</label><input id="m_${k}" list="ml" value="${esc(m[k]||'')}" placeholder="What will be served?"></div>`).join('')+
+`<div class="row"><button onclick="saveDay(${i})">💾 Save</button><button class="g" onclick="editDay=null;render()">Cancel</button><select onchange="copyFrom(this.value)"><option value="">Copy from…</option>${D.map((x,j)=>j!=i?`<option value="${j}">${x}</option>`:'').join('')}</select></div>`
+:M.map(([k,l])=>`<div class="it"><span style="width:105px;color:var(--m)">${l}</span><span class="x">${esc(m[k]||'—')}</span></div>`).join('')+
+`<div class="row" style="margin-top:8px"><button class="g" onclick="editDay=${i};render()">✏️ Edit</button>${has(m)?`<button class="g" onclick="clearDay(${i})">🗑 Clear</button>`:''}</div>`;
+return `<div class="card" style="${td?'border-color:var(--a);border-width:2px':''}"><h2>${dn}${td?' · today':''} <span class="tag ${has(m)?'ok':'low'}">${has(m)?'✓ saved':'not set'}</span></h2>${body}</div>`}).join('')},
 budget(){const tot=S.shop.reduce((a,x)=>a+x.cost,0),buy=S.shop.filter(x=>x.bought).reduce((a,x)=>a+x.cost,0);
 return `<div class="card"><h2>My money</h2><div class="row"><input id="mo" type="number" value="${S.money||''}" placeholder="Money available"><button onclick="S.money=num('mo');save();render()">Save</button></div>
 <div class="kpi"><div><b>${fmt(S.money)}</b><span>Available</span></div><div><b>${fmt(tot)}</b><span>Shopping total</span></div><div><b style="color:${S.money-tot<0?'var(--r)':'var(--a)'}">${fmt(S.money-tot)}</b><span>After buying all</span></div></div></div>
@@ -127,7 +136,10 @@ const cupTxt=x=>x.cups?Object.entries(x.cups).filter(e=>e[1]).sort((a,b)=>b[0]-a
 function cupAdj(p,d){cart[p]=Math.max(0,(cart[p]||0)+d);$('c_'+p).textContent=cart[p];$('ctot').textContent=fmt(cartTotal())}
 function addBiz(){const amt=cartTotal();if(!amt){alert('Tap + to add at least one cup');return}
 S.biz.push({id:uid(),date:todayStr(),cust:val('bcu'),cups:Object.assign({},cart),amt,exp:num('bex'),paid:$('bpd').checked});cart={};save();render()}
-let bizView='rec',repView='d7';
+let bizView='rec',repView='d7',editDay=null;
+function saveDay(i){const m={b:val('m_b'),l:val('m_l'),d:val('m_d')};if(m.b||m.l||m.d)S.menu[i]=m;else delete S.menu[i];editDay=null;save();render()}
+function copyFrom(j){if(j==='')return;const m=S.menu[j]||{};['b','l','d'].forEach(k=>$('m_'+k).value=m[k]||'')}
+function clearDay(i){if(!confirm('Clear the menu for '+D[i]+'?'))return;delete S.menu[i];save();render()}
 const setBizView=v=>{bizView=v;render()},setRep=v=>{repView=v;render()};
 function addExp(){const a=num('ea');if(!a)return;S.biz.push({id:uid(),date:todayStr(),cust:'Expense: '+(val('ed')||'general'),cups:{},amt:0,exp:a,paid:true,kind:'exp'});save();render()}
 function recView(){const mx=Math.max(...S.set.prices);
