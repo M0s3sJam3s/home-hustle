@@ -142,6 +142,10 @@ def today_tasks(s, n):
                   key=lambda t: t.get("time", ""))
 
 
+def task_status(s, t, n):
+    return ((s.get("log") or {}).get(n.date().isoformat()) or {}).get(t.get("id"), "")
+
+
 def low_items(s):
     return [i for i in s.get("stock", []) if i.get("qty", 0) <= i.get("min", 0)]
 
@@ -159,7 +163,7 @@ def cups(x):
 
 
 def morning_text(s, n):
-    tt = [t for t in today_tasks(s, n) if not t.get("done")]
+    tt = [t for t in today_tasks(s, n) if task_status(s, t, n) != "done"]
     m = (s.get("menu") or {}).get(str(n.weekday())) or {}
     lo = low_items(s)
     L = [f"☀️ Good morning! It's {DAYS[n.weekday()]}.", "", "📅 Plans today:"]
@@ -179,11 +183,13 @@ def evening_text(s, n):
     rows = [x for x in s.get("biz", []) if x.get("date") == today]
     inc = sum(x.get("amt", 0) for x in rows)
     exp = sum(x.get("exp", 0) for x in rows)
-    left = [t for t in today_tasks(s, n) if not t.get("done")]
+    tasks = today_tasks(s, n)
+    left = [t for t in tasks if task_status(s, t, n) != "done"]
     L = ["🌙 Evening summary", "", f"🥜 Jobs: {len([x for x in rows if x.get('kind') != 'exp'])} | Cups: {sum(cups(x) for x in rows)}",
          f"💵 Income: {money(s, inc)} | Profit: {money(s, inc - exp)}"]
+    L += [f"✅ Plans done: {len(tasks) - len(left)}/{len(tasks)}"]
     if left:
-        L += ["", "📋 Not done yet:"] + [f"  • {t.get('time')} {t.get('title')}" for t in left]
+        L += ["", "📋 Not done:"] + [f"  • {t.get('time')} {t.get('title')}" for t in left]
     owed = unpaid(s)
     if owed:
         L += ["", f"💰 Unpaid: {money(s, sum(x.get('amt', 0) for x in owed))} from {len(owed)} job(s)"]
@@ -201,7 +207,7 @@ async def check():
 
     for t in today_tasks(s, n):
         tm, key = mins(t.get("time")), f"{day}:t:{t.get('id')}"
-        if t.get("done") or tm is None or seen(key):
+        if task_status(s, t, n) == "done" or tm is None or seen(key):
             continue
         if 0 <= now_m - tm <= 10 and await tg(f"⏰ {t.get('title')}\nScheduled for {t.get('time')}"):
             mark(key)

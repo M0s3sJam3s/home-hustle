@@ -46,7 +46,7 @@ nav button.on{color:var(--a);font-weight:700}
 <script>
 const D=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const dayIdx=()=>(new Date().getDay()+6)%7;
-const def={tasks:[],stock:[],menu:{},shop:[],money:0,biz:[],chat:[],fired:{},set:{cur:'MK',key:'',morning:'07:00',prices:[500,450,400,300,250,200],server:'',secret:''}};
+const def={log:{},tasks:[],stock:[],menu:{},shop:[],money:0,biz:[],chat:[],fired:{},set:{cur:'MK',key:'',morning:'07:00',prices:[500,450,400,300,250,200],server:'',secret:''}};
 let S;try{S=Object.assign({},def,JSON.parse(localStorage.getItem('hhp')||'{}'))}catch(e){S=def}
 S.set=Object.assign({},def.set,S.set);
 const persist=()=>{try{localStorage.setItem('hhp',JSON.stringify(S))}catch(e){}};
@@ -72,16 +72,27 @@ s.profit=s.rev-s.exp;s.yield=s.kgIn?Math.round(s.kgOut/s.kgIn*100):0;return s};
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const todayStr=()=>ymd(new Date());
 const weekAgo=()=>ymd(new Date(Date.now()-6*864e5));
+/* task log: S.log[date][taskId] = 'done' | 'missed'  (per date, so weekly tasks start fresh each week) */
+S.log=S.log||{};{const cut=ymd(new Date(Date.now()-120*864e5));Object.keys(S.log).forEach(k=>{if(k<cut)delete S.log[k]});
+S.tasks.forEach(t=>{if(t.done&&t.day==dayIdx()){const k=todayStr();S.log[k]=S.log[k]||{};S.log[k][t.id]='done'}delete t.done})}
+const dateOfDay=i=>{const d=new Date();d.setDate(d.getDate()-((d.getDay()+6)%7)+i);return ymd(d)};
+const getSt=(t,date)=>((S.log||{})[date]||{})[t.id]||'';
+function setSt(id,date,v){S.log=S.log||{};const o=S.log[date]=S.log[date]||{};if(o[id]==v)delete o[id];else o[id]=v;if(!Object.keys(o).length)delete S.log[date];save();render()}
+function taskRow(t,date){const st=getSt(t,date),late=!st&&(date<todayStr()||(date==todayStr()&&t.time<hmNow()));
+return `<div class="it"><span class="x ${st=='done'?'done':''}" style="${st=='missed'?'color:var(--r)':''}">${esc(t.time)} — ${esc(t.title)}${late?' <small style="color:var(--w)">⚠ not marked</small>':''}</span>
+<button class="${st=='done'?'':'g'}" title="Done" onclick="setSt('${t.id}','${date}','done')">✅</button><button class="${st=='missed'?'d':'g'}" title="Not done" onclick="setSt('${t.id}','${date}','missed')">❌</button><button class="g" title="Delete for every week" onclick="if(confirm('Delete this task for every week?'))del('tasks','${t.id}')">🗑</button></div>`}
+function weekSum(){let d=0,m=0,n=0,late=0;D.forEach((_,i)=>{const dt=dateOfDay(i);S.tasks.filter(t=>t.day==i).forEach(t=>{n++;const s=getSt(t,dt);if(s=='done')d++;else if(s=='missed')m++;else if(dt<todayStr())late++})});
+return `<div class="card"><h2>This week's plans</h2><div class="kpi"><div><b>${d}</b><span>✅ Done</span></div><div><b>${m}</b><span>❌ Not done</span></div><div><b>${late}</b><span>⚠ Past, unmarked</span></div><div><b>${n?Math.round(d/n*100):0}%</b><span>Completed</span></div></div></div>`}
 
 const V={
 today(){const tt=todayTasks(),m=todayMenu(),lo=lowItems(),b=bizStats(S.biz.filter(x=>x.date==todayStr()));
-return alarmStatus()+`<div class="card"><h2>${D[dayIdx()]}'s plan</h2>${tt.map(taskRow).join('')||'<small>No plans today. Add some in Week.</small>'}</div>
+return alarmStatus()+`<div class="card"><h2>${D[dayIdx()]}'s plan <small>${tt.filter(t=>getSt(t,todayStr())=='done').length}/${tt.length} done</small></h2>${tt.map(t=>taskRow(t,todayStr())).join('')||'<small>No plans today. Add some in Week.</small>'}</div>
 <div class="card"><h2>Menu today</h2>🌅 ${esc(m.b||'—')}<br>☀️ ${esc(m.l||'—')}<br>🌙 ${esc(m.d||'—')}</div>
 <div class="card"><h2>Need to buy at home</h2>${lo.map(i=>`<div class="it"><span class="x">${esc(i.name)} (${i.qty} ${esc(i.unit)})</span><span class="tag ${st(i)[0]}">${st(i)[1]}</span></div>`).join('')||'<small>Everything is stocked 🎉</small>'}</div>
 <div class="card"><h2>Business today</h2><div class="kpi"><div><b>${b.cups}</b><span>Cups ground</span></div><div><b>${fmt(b.rev)}</b><span>Income</span></div><div><b>${fmt(b.profit)}</b><span>Profit</span></div></div></div>
 <div class="card"><button onclick="askNotif()">🔔 Test alarm & enable notifications</button> <small>Keep this page open for alarms to ring.</small></div>`},
-week(){return `<div class="card"><h2>Add work / plan</h2><div class="row"><input id="tt" placeholder="What needs to be done?"><select id="td">${D.map((d,i)=>`<option value="${i}" ${i==dayIdx()?'selected':''}>${d}</option>`).join('')}</select><input id="tm" type="time" value="08:00"><button onclick="addTask()">Add</button></div></div>
-${D.map((d,i)=>{const l=S.tasks.filter(t=>t.day==i).sort((a,b)=>a.time.localeCompare(b.time));return `<div class="card"><h2>${d}${i==dayIdx()?' (today)':''}</h2>${l.map(taskRow).join('')||'<small>Nothing planned</small>'}</div>`}).join('')}`},
+week(){return weekSum()+`<div class="card"><h2>Add work / plan</h2><div class="row"><input id="tt" placeholder="What needs to be done?"><select id="td">${D.map((d,i)=>`<option value="${i}" ${i==dayIdx()?'selected':''}>${d}</option>`).join('')}</select><input id="tm" type="time" value="08:00"><button onclick="addTask()">Add</button></div></div>
+${D.map((d,i)=>{const l=S.tasks.filter(t=>t.day==i).sort((a,b)=>a.time.localeCompare(b.time));return `<div class="card"><h2>${d} <small>${dateOfDay(i).slice(5)}${i==dayIdx()?' · today':''}</small></h2>${l.map(t=>taskRow(t,dateOfDay(i))).join('')||'<small>Nothing planned</small>'}</div>`}).join('')}`},
 stock(){return `<div class="card"><h2>Add household item</h2><div class="row"><input id="sn" placeholder="Item (e.g. Rice)"><input id="sq" type="number" placeholder="Qty"><input id="sm" type="number" placeholder="Alert at"><input id="su" placeholder="Unit (kg, L…)"><button onclick="addStock()">Add</button></div></div>
 <div class="card"><h2>At home</h2>${S.stock.map(i=>`<div class="it"><span class="x">${esc(i.name)}<br><small>${i.qty} ${esc(i.unit)} · alert at ${i.min}</small></span><span class="tag ${st(i)[0]}">${st(i)[1]}</span><button class="g" onclick="qty('${i.id}',-1)">−</button><button class="g" onclick="qty('${i.id}',1)">+</button><button class="d" onclick="del('stock','${i.id}')">✕</button></div>`).join('')||'<small>No items yet</small>'}
 <div class="row" style="margin-top:8px"><button onclick="lowToShop()">➕ Add low/out items to shopping list</button></div></div>`},
@@ -104,7 +115,6 @@ ai(){return `<div class="card"><h2>🤖 Business & home assistant</h2><div id="c
 <button onclick="saveSet()">Save settings</button> <button class="d" onclick="if(confirm('Delete ALL data?')){localStorage.removeItem('hhp');location.reload()}">Reset</button>
 <p><small>Without a key, the assistant uses built-in analysis of your data. The key is stored only in this browser.</small></p></div>`}
 };
-function taskRow(t){return `<div class="it"><input type="checkbox" ${t.done?'checked':''} onchange="tog('tasks','${t.id}','done')"><span class="x ${t.done?'done':''}">${esc(t.time)} — ${esc(t.title)}</span><button class="d" onclick="del('tasks','${t.id}')">✕</button></div>`}
 function addTask(){if(!val('tt'))return;S.tasks.push({id:uid(),title:val('tt'),day:+$('td').value,time:$('tm').value||'08:00',done:false});save();render()}
 function addStock(){if(!val('sn'))return;S.stock.push({id:uid(),name:val('sn'),qty:num('sq'),min:num('sm'),unit:val('su')});save();render()}
 function qty(id,d){const i=S.stock.find(x=>x.id==id);i.qty=Math.max(0,i.qty+d);save();render()}
@@ -186,7 +196,7 @@ if(!r.ok)throw new Error(r.status==401?'wrong secret key':'server error '+r.stat
 let pushT=null;
 function schedulePush(){if(!cfg()||!S.synced)return;clearTimeout(pushT);pushT=setTimeout(push,2000);setSync('⏳ saving…')}
 async function push(){if(!cfg())return;try{const j=await api('PUT',{state:clean()});S.synced=j.updated;S.dirty=false;persist();setSync('☁️ synced '+hmNow())}catch(e){setSync('⚠ '+(e.message.includes('Failed')?'offline, will retry':e.message))}}
-function apply(srv,up){['tasks','stock','menu','shop','money','biz'].forEach(k=>{if(k in srv)S[k]=srv[k]});
+function apply(srv,up){['tasks','stock','menu','shop','money','biz','log'].forEach(k=>{if(k in srv)S[k]=srv[k]});
 S.set=Object.assign({},S.set,srv.set||{},{server:S.set.server,secret:S.set.secret,key:S.set.key});S.synced=up;S.dirty=false;persist();render();setSync('☁️ synced '+hmNow())}
 async function syncNow(){if(!cfg()){setSync('local only');return}
 try{setSync('⏳ connecting…');const j=await api('GET'),srv=j.state||{},up=j.updated||0;
@@ -203,7 +213,7 @@ setTimeout(syncNow,1500);
 
 /* Alarms & notifications */
 function alarmStatus(){const n=new Date(),mins=n.getHours()*60+n.getMinutes();
-const nx=todayTasks().filter(t=>!t.done&&mm(t.time)>=mins).sort((a,b)=>mm(a.time)-mm(b.time))[0];
+const nx=todayTasks().filter(t=>getSt(t,todayStr())!='done'&&mm(t.time)>=mins).sort((a,b)=>mm(a.time)-mm(b.time))[0];
 const perm='Notification' in window?Notification.permission:'unsupported',ok=perm=='granted';
 return `<div class="card" style="border-color:${ok?'var(--a)':'var(--w)'}"><h2>⏰ Alarm status</h2>
 Clock now: <b>${n.toTimeString().slice(0,5)}</b><br>
@@ -226,11 +236,11 @@ document.title='⏰ '+title;const b=$('ban');b.style.display='block';
 b.innerHTML=`<b>${esc(title)}</b><br>${esc(body).replace(/\n/g,'<br>')}<br><button class="g" style="margin-top:8px" onclick="stopRing()">Dismiss</button>`;notify(title,body)}
 async function askNotif(){let p='not supported';if('Notification' in window)p=await Notification.requestPermission();audio();
 alarm('Test alarm','Notifications: '+p+(p=='granted'?'':'\nAllow notifications for this site in your browser settings.'))}
-function summary(){const tt=todayTasks().filter(t=>!t.done),m=todayMenu(),lo=lowItems();
+function summary(){const tt=todayTasks().filter(t=>getSt(t,todayStr())!='done'),m=todayMenu(),lo=lowItems();
 return `Plans: ${tt.map(t=>t.time+' '+t.title).join('; ')||'none'}\nMenu: ${m.b||'-'} / ${m.l||'-'} / ${m.d||'-'}\nLow at home: ${lo.map(i=>i.name).join(', ')||'nothing'}`}
 const mm=s=>{const [a,b]=(s||'0:0').split(':');return a*60+ +b};
 function tick(){const n=new Date(),k=n.toDateString(),mins=n.getHours()*60+n.getMinutes();
-todayTasks().forEach(t=>{const d=mins-mm(t.time);if(!t.done&&d>=0&&d<=10&&S.fired[t.id]!=k){S.fired[t.id]=k;alarm('⏰ '+t.title,'Scheduled for '+t.time)}});
+todayTasks().forEach(t=>{const d=mins-mm(t.time);if(getSt(t,todayStr())!='done'&&d>=0&&d<=10&&S.fired[t.id]!=k){S.fired[t.id]=k;alarm('⏰ '+t.title,'Scheduled for '+t.time)}});
 const d=mins-mm(S.set.morning);if(d>=0&&d<=60&&S.fired.m!=k){S.fired.m=k;alarm('Good morning — '+D[dayIdx()],summary())}persist()}
 setInterval(tick,10000);setInterval(()=>{if(tab=='today'&&!document.hidden)render()},20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
