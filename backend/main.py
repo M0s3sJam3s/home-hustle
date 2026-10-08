@@ -23,26 +23,39 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 SECRET = os.getenv("APP_SECRET", "")
 TZ = ZoneInfo(os.getenv("TZ_NAME", "Africa/Blantyre"))
 DB = os.getenv("DB_PATH", "planner.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "")  # Postgres (e.g. Neon) when set, else local SQLite file
+PG = DATABASE_URL.startswith("postgres")
+if PG:
+    import psycopg
 EVENING = os.getenv("EVENING_TIME", "19:00")
 ORIGINS = [o.strip() for o in os.getenv("ALLOW_ORIGINS", "*").split(",") if o.strip()]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 # ---------- database ----------
+# Everything the scheduler needs is cached in memory, so the database is only
+# touched on startup and when something changes (lets a free Postgres sleep).
+CACHE = {"state": None, "sent": None, "chat": None}
+
+
 def q(sql, args=(), one=False):
-    c = sqlite3.connect(DB)
-    try:
-        cur = c.execute(sql, args)
-        c.commit()
-        rows = cur.fetchall()
-    finally:
-        c.close()
+    if PG:
+        with psycopg.connect(DATABASE_URL, connect_timeout=15) as c:
+            cur = c.execute(sql.replace("?", "%s"), args)
+            rows = cur.fetchall() if cur.description else []
+    else:
+        c = sqlite3.connect(DB)
+        try:
+            cur = c.execute(sql, args)
+            c.commit()
+            rows = cur.fetchall()
+        finally:
+            c.close()
     return (rows[0] if rows else None) if one else rows
 
 
 def init():
     q("create table if not exists kv(k text primary key, v text)")
-    q("create table if not exists sent(k text primary key)")
 
 
 def kv_get(k, default=None):
@@ -54,21 +67,33 @@ def kv_set(k, v):
     q("insert into kv(k,v) values(?,?) on conflict(k) do update set v=excluded.v", (k, json.dumps(v)))
 
 
+def state():
+    if CACHE["state"] is None:
+        CACHE["state"] = kv_get("state", {}) or {}
+    return CACHE["state"]
+
+
 def seen(k):
-    return q("select 1 from sent where k=?", (k,), one=True) is not None
+    if CACHE["sent"] is None:
+        CACHE["sent"] = set(kv_get("sent", []))
+    return k in CACHE["sent"]
 
 
 def mark(k):
-    q("insert or ignore into sent(k) values(?)", (k,))
-
-
-def state():
-    return kv_get("state", {}) or {}
+    seen(k)
+    cutoff = (datetime.now(TZ) - timedelta(days=7)).date().isoformat()
+    CACHE["sent"] = {x for x in CACHE["sent"] if x[:10] >= cutoff} | {k}
+    kv_set("sent", sorted(CACHE["sent"]))
 
 
 # ---------- telegram ----------
 def chat_id():
-    return os.getenv("TELEGRAM_CHAT_ID") or kv_get("chat_id")
+    env = os.getenv("TELEGRAM_CHAT_ID")
+    if env:
+        return env
+    if CACHE["chat"] is None:
+        CACHE["chat"] = str(kv_get("chat_id") or "")
+    return CACHE["chat"] or None
 
 
 async def tg(text):
@@ -97,6 +122,7 @@ async def find_chat_id():
         m = u.get("message")
         if m:
             kv_set("chat_id", m["chat"]["id"])
+            CACHE["chat"] = str(m["chat"]["id"])
             print(f"Found your chat id: {m['chat']['id']}  (add TELEGRAM_CHAT_ID={m['chat']['id']} to .env to lock it)")
             return
     print("No chat id yet: open your bot in Telegram and send it a message, then restart.")
@@ -154,7 +180,7 @@ def evening_text(s, n):
     inc = sum(x.get("amt", 0) for x in rows)
     exp = sum(x.get("exp", 0) for x in rows)
     left = [t for t in today_tasks(s, n) if not t.get("done")]
-    L = ["🌙 Evening summary", "", f"🥜 Jobs: {len(rows)} | Cups: {sum(cups(x) for x in rows)}",
+    L = ["🌙 Evening summary", "", f"🥜 Jobs: {len([x for x in rows if x.get('kind') != 'exp'])} | Cups: {sum(cups(x) for x in rows)}",
          f"💵 Income: {money(s, inc)} | Profit: {money(s, inc - exp)}"]
     if left:
         L += ["", "📋 Not done yet:"] + [f"  • {t.get('time')} {t.get('title')}" for t in left]
@@ -172,7 +198,6 @@ async def check():
     n = datetime.now(TZ)
     day = n.date().isoformat()
     now_m = n.hour * 60 + n.minute
-    q("delete from sent where k < ?", ((n - timedelta(days=7)).date().isoformat(),))
 
     for t in today_tasks(s, n):
         tm, key = mins(t.get("time")), f"{day}:t:{t.get('id')}"
@@ -246,6 +271,7 @@ async def put_state(req: Request, payload: dict = Body(...)):
         raise HTTPException(400, "state must be an object")
     (s.get("set") or {}).pop("key", None)  # never store the Groq key on the server
     kv_set("state", s)
+    CACHE["state"] = s
     kv_set("updated", time.time())
     return {"ok": True, "updated": kv_get("updated")}
 

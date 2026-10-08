@@ -34,6 +34,9 @@ nav button.on{color:var(--a);font-weight:700}
 .me{background:var(--a);color:#fff;margin-left:20%}.ai{background:var(--bg)}
 .mg{display:grid;grid-template-columns:90px 1fr 1fr 1fr;gap:4px;align-items:center;font-size:13px}
 .mg input{width:100%;padding:6px}
+.rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.rc{margin:0}.rc span{font-size:12px;color:var(--m)}.rc b{display:block;font-size:20px;margin:2px 0}.rc small{display:block;color:var(--m)}
+.ba{fill:var(--a)}.ln{stroke:var(--w);fill:none;stroke-width:2.5}.gr{stroke:var(--b)}.tx{fill:var(--m);font-size:10px}
 </style></head>
 <body>
 <div id="ban"></div>
@@ -63,11 +66,12 @@ const st=i=>i.qty<=0?['out','Out']:i.qty<=i.min?['low','Low']:['ok','OK'];
 const lowItems=()=>S.stock.filter(i=>i.qty<=i.min);
 const todayTasks=()=>S.tasks.filter(t=>t.day==dayIdx()).sort((a,b)=>a.time.localeCompare(b.time));
 const todayMenu=()=>S.menu[dayIdx()]||{};
-const bizStats=(rows)=>{const r=rows||S.biz;const s={n:r.length,cups:0,kgIn:0,kgOut:0,rev:0,exp:0,unpaid:0};
+const bizStats=(rows)=>{const r=rows||S.biz;const s={n:r.filter(x=>x.kind!='exp').length,cups:0,kgIn:0,kgOut:0,rev:0,exp:0,unpaid:0};
 r.forEach(x=>{s.kgIn+=x.kgIn||0;s.kgOut+=x.kgOut||0;s.cups+=Object.values(x.cups||{}).reduce((a,b)=>a+b,0);s.rev+=x.amt||0;s.exp+=x.exp||0;if(!x.paid)s.unpaid+=x.amt||0});
 s.profit=s.rev-s.exp;s.yield=s.kgIn?Math.round(s.kgOut/s.kgIn*100):0;return s};
-const todayStr=()=>new Date().toISOString().slice(0,10);
-const weekAgo=()=>new Date(Date.now()-6*864e5).toISOString().slice(0,10);
+const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const todayStr=()=>ymd(new Date());
+const weekAgo=()=>ymd(new Date(Date.now()-6*864e5));
 
 const V={
 today(){const tt=todayTasks(),m=todayMenu(),lo=lowItems(),b=bizStats(S.biz.filter(x=>x.date==todayStr()));
@@ -88,13 +92,7 @@ return `<div class="card"><h2>My money</h2><div class="row"><input id="mo" type=
 <div class="card"><h2>What I must buy</h2><div class="row"><input id="bn" placeholder="Item"><input id="bc" type="number" placeholder="Cost"><button onclick="addShop()">Add</button></div>
 ${S.shop.map(x=>`<div class="it"><input type="checkbox" ${x.bought?'checked':''} onchange="tog('shop','${x.id}','bought')"><span class="x ${x.bought?'done':''}">${esc(x.name)}</span>${fmt(x.cost)}<button class="d" onclick="del('shop','${x.id}')">✕</button></div>`).join('')||'<small>Nothing to buy</small>'}
 <small>Bought so far: ${fmt(buy)}</small></div>`},
-biz(){const a=bizStats(),w=bizStats(S.biz.filter(x=>x.date>=weekAgo())),mx=Math.max(...S.set.prices);
-return `<div class="card"><h2>Record grinding job</h2><div class="row"><input id="bcu" placeholder="Customer name"></div>
-<h3>Tap + for each cup</h3>${S.set.prices.map(p=>`<div class="it"><span class="x">${p==mx?'Full cup':'Part cup'} — ${fmt(p)}</span><button class="g" onclick="cupAdj(${p},-1)">−</button><b id="c_${p}" style="min-width:26px;text-align:center">${cart[p]||0}</b><button onclick="cupAdj(${p},1)">+</button></div>`).join('')}
-<div class="kpi" style="margin:8px 0"><div><b id="ctot">${fmt(cartTotal())}</b><span>Total to charge</span></div></div>
-<div class="row"><input id="bex" type="number" placeholder="Expenses (optional)"><label><input type="checkbox" id="bpd" checked> Paid</label><button onclick="addBiz()">Save job</button></div></div>
-<div class="card"><h2>Last 7 days</h2><div class="kpi"><div><b>${w.cups}</b><span>Cups ground</span></div><div><b>${fmt(w.rev)}</b><span>Income</span></div><div><b>${fmt(w.profit)}</b><span>Profit</span></div><div><b>${fmt(a.unpaid)}</b><span>Unpaid (all time)</span></div></div></div>
-<div class="card"><h2>Records</h2>${S.biz.slice().reverse().slice(0,30).map(x=>`<div class="it"><span class="x">${esc(x.cust||'Customer')} <small>${x.date} · ${cupTxt(x)}</small></span>${fmt(x.amt)} <span class="tag ${x.paid?'ok':'out'}" onclick="tog('biz','${x.id}','paid')">${x.paid?'Paid':'Owes'}</span><button class="d" onclick="del('biz','${x.id}')">✕</button></div>`).join('')||'<small>No records yet</small>'}</div>`},
+biz(){return `<div class="row"><button class="${bizView=='rec'?'':'g'}" onclick="setBizView('rec')">✍️ Record</button><button class="${bizView=='rep'?'':'g'}" onclick="setBizView('rep')">📊 Reports</button></div>`+(bizView=='rep'?reports():recView())},
 ai(){return `<div class="card"><h2>🤖 Business & home assistant</h2><div id="chat">${S.chat.map(m=>`<div class="msg ${m.r=='user'?'me':'ai'}">${esc(m.c)}</div>`).join('')||'<small>Ask: "How was my week?", "What should I buy?", "Who owes me?"</small>'}</div>
 <div class="row" style="margin-top:8px"><input id="q" placeholder="Ask anything…" onkeydown="if(event.key=='Enter')ask()"><button onclick="ask()">Send</button></div></div>
 <div class="card"><h2>Settings</h2><div class="row"><input id="cu" value="${esc(S.set.cur)}" placeholder="Currency"><input id="mt" type="time" value="${S.set.morning}"></div>
@@ -119,6 +117,58 @@ const cupTxt=x=>x.cups?Object.entries(x.cups).filter(e=>e[1]).sort((a,b)=>b[0]-a
 function cupAdj(p,d){cart[p]=Math.max(0,(cart[p]||0)+d);$('c_'+p).textContent=cart[p];$('ctot').textContent=fmt(cartTotal())}
 function addBiz(){const amt=cartTotal();if(!amt){alert('Tap + to add at least one cup');return}
 S.biz.push({id:uid(),date:todayStr(),cust:val('bcu'),cups:Object.assign({},cart),amt,exp:num('bex'),paid:$('bpd').checked});cart={};save();render()}
+let bizView='rec',repView='d7';
+const setBizView=v=>{bizView=v;render()},setRep=v=>{repView=v;render()};
+function addExp(){const a=num('ea');if(!a)return;S.biz.push({id:uid(),date:todayStr(),cust:'Expense: '+(val('ed')||'general'),cups:{},amt:0,exp:a,paid:true,kind:'exp'});save();render()}
+function recView(){const mx=Math.max(...S.set.prices);
+return `<div class="card"><h2>Record grinding job</h2><div class="row"><input id="bcu" placeholder="Customer name"></div>
+<h3>Tap + for each cup</h3>${S.set.prices.map(p=>`<div class="it"><span class="x">${p==mx?'Full cup':'Part cup'} — ${fmt(p)}</span><button class="g" onclick="cupAdj(${p},-1)">−</button><b id="c_${p}" style="min-width:26px;text-align:center">${cart[p]||0}</b><button onclick="cupAdj(${p},1)">+</button></div>`).join('')}
+<div class="kpi" style="margin:8px 0"><div><b id="ctot">${fmt(cartTotal())}</b><span>Total to charge</span></div></div>
+<div class="row"><input id="bex" type="number" placeholder="Expenses for this job (optional)"><label><input type="checkbox" id="bpd" checked> Paid</label><button onclick="addBiz()">Save job</button></div></div>
+<div class="card"><h2>Record an expense</h2><div class="row"><input id="ed" placeholder="e.g. Groundnuts, electricity, transport"><input id="ea" type="number" placeholder="Amount"><button class="d" onclick="addExp()">Add</button></div></div>
+<div class="card"><h2>Records</h2>${S.biz.slice().reverse().slice(0,30).map(x=>`<div class="it"><span class="x">${esc(x.cust||'Customer')} <small>${x.date} · ${cupTxt(x)}</small></span>${x.kind=='exp'?'−'+fmt(x.exp):fmt(x.amt)} ${x.kind=='exp'?'':`<span class="tag ${x.paid?'ok':'out'}" onclick="tog('biz','${x.id}','paid')">${x.paid?'Paid':'Owes'}</span>`}<button class="d" onclick="del('biz','${x.id}')">✕</button></div>`).join('')||'<small>No records yet</small>'}</div>`}
+
+/* Reports */
+const range=p=>{const n=new Date(),t=ymd(n);if(p=='day')return[t,t];
+if(p=='week'){const d=new Date(n);d.setDate(n.getDate()-((n.getDay()+6)%7));return[ymd(d),t]}
+if(p=='month')return[t.slice(0,8)+'01',t];if(p=='year')return[t.slice(0,5)+'01-01',t];return['0000-00-00','9999-99-99']};
+const inR=(x,r)=>x.date>=r[0]&&x.date<=r[1];
+function prevR(p){const n=new Date(),sh=k=>ymd(new Date(n.getFullYear(),n.getMonth(),n.getDate()-k));
+if(p=='day')return[sh(1),sh(1)];if(p=='week'){const r=range('week');const a=new Date(r[0]+'T00:00');a.setDate(a.getDate()-7);return[ymd(a),sh(7)]}
+if(p=='month'){const f=new Date(n.getFullYear(),n.getMonth()-1,1),last=new Date(n.getFullYear(),n.getMonth(),0).getDate();return[ymd(f),ymd(new Date(f.getFullYear(),f.getMonth(),Math.min(n.getDate(),last)))]}return null}
+function series(v){const n=new Date(),out=[],idx={},M=v=='m12',N=v=='d7'?7:30;
+if(M)for(let i=11;i>=0;i--){const d=new Date(n.getFullYear(),n.getMonth()-i,1),k=ymd(d).slice(0,7);idx[k]=out.length;out.push({l:d.toLocaleString('en',{month:'short'}),a:0,e:0,c:0})}
+else for(let i=N-1;i>=0;i--){const d=new Date(n.getFullYear(),n.getMonth(),n.getDate()-i),k=ymd(d);idx[k]=out.length;out.push({l:v=='d7'?d.toLocaleString('en',{weekday:'short'}):String(d.getDate()),a:0,e:0,c:0})}
+S.biz.forEach(x=>{const k=M?x.date.slice(0,7):x.date;if(k in idx){const o=out[idx[k]];o.a+=x.amt||0;o.e+=x.exp||0;o.c+=Object.values(x.cups||{}).reduce((t,y)=>t+y,0)}});
+out.forEach(o=>o.p=o.a-o.e);return out}
+function chart(d,bk,lk,money){const W=640,H=200,L=44,B=24,T=10,w=W-L-6,h=H-B-T;
+const vals=d.flatMap(o=>[o[bk],lk?o[lk]:0]),mx=Math.max(1,...vals),mn=Math.min(0,...vals),rg=mx-mn||1;
+const Y=v=>T+h-(v-mn)/rg*h,bw=w/d.length,sh=v=>Math.abs(v)>=1000?(v/1000).toFixed(v%1000?1:0)+'k':Math.round(v),step=Math.ceil(d.length/8);let g='';
+for(let i=0;i<=4;i++){const v=mn+rg*i/4,y=Y(v);g+=`<line class="gr" x1="${L}" x2="${W-6}" y1="${y}" y2="${y}"/><text class="tx" x="${L-4}" y="${y+3}" text-anchor="end">${sh(v)}</text>`}
+d.forEach((o,i)=>{const x=L+i*bw,y0=Y(0),y1=Y(o[bk]);g+=`<rect class="ba" x="${x+bw*.15}" width="${bw*.7}" y="${Math.min(y0,y1)}" height="${Math.abs(y0-y1)}" rx="2"><title>${o.l}: ${money?fmt(o[bk]):o[bk]}</title></rect>`;if(i%step==0)g+=`<text class="tx" x="${x+bw/2}" y="${H-8}" text-anchor="middle">${o.l}</text>`});
+if(lk)g+=`<polyline class="ln" points="${d.map((o,i)=>(L+i*bw+bw/2)+','+Y(o[lk])).join(' ')}"/>`;
+return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}</svg>`}
+function reports(){const P=[['day','Today'],['week','This week'],['month','This month'],['year','This year'],['all','All time']],pl={day:'yesterday',week:'last week',month:'last month'};
+const cards=P.map(([p,l])=>{const s=bizStats(S.biz.filter(x=>inR(x,range(p)))),pr=prevR(p);let dl='';
+if(pr){const o=bizStats(S.biz.filter(x=>inR(x,pr))).rev;if(o>0){const d=Math.round((s.rev-o)/o*100);dl=`<small style="color:${d>=0?'var(--a)':'var(--r)'}">${d>=0?'▲':'▼'} ${Math.abs(d)}% vs ${pl[p]}</small>`}}
+return `<div class="card rc"><span>${l}</span><b>${fmt(s.rev)}</b><small>Profit ${fmt(s.profit)}</small><small>${s.cups} cups · ${s.n} jobs</small>${dl}</div>`}).join('');
+const all=bizStats(),owed=S.biz.filter(x=>!x.paid).length;
+const n=new Date(),v=repView,d=series(v),st=v=='m12'?ymd(new Date(n.getFullYear(),n.getMonth()-11,1)):ymd(new Date(n.getFullYear(),n.getMonth(),n.getDate()-(v=='d7'?6:29)));
+const rows=S.biz.filter(x=>x.date>=st&&x.kind!='exp'),tier={},cu={};
+rows.forEach(x=>{Object.entries(x.cups||{}).forEach(([p,c])=>tier[p]=(tier[p]||0)+c);const k=x.cust||'Customer';cu[k]=cu[k]||{a:0,o:0};cu[k].a+=x.amt;if(!x.paid)cu[k].o+=x.amt});
+const tm=Math.max(1,...Object.values(tier)),byD={};
+S.biz.filter(x=>inR(x,range('month'))&&x.kind!='exp').forEach(x=>byD[x.date]=(byD[x.date]||0)+x.amt);
+const ds=Object.entries(byD),avg=ds.length?ds.reduce((t,e)=>t+e[1],0)/ds.length:0,best=ds.sort((a,b)=>b[1]-a[1])[0];
+const btn=(k,l)=>`<button class="${v==k?'':'g'}" onclick="setRep('${k}')">${l}</button>`;
+return `<div class="rg">${cards}<div class="card rc"><span>Owed to you</span><b>${fmt(all.unpaid)}</b><small>${owed} unpaid record(s)</small></div></div>
+${best?`<div class="card"><small>🏆 Best day this month: <b>${best[0]}</b> (${fmt(best[1])}) · Average on working days: <b>${fmt(avg)}</b></small></div>`:''}
+<div class="card"><div class="row">${btn('d7','7 days')}${btn('d30','30 days')}${btn('m12','12 months')}</div>
+<h2>💵 Income <small style="color:var(--w)">(orange line = profit)</small></h2>${chart(d,'a','p',true)}
+<h2 style="margin-top:12px">🥜 Cups ground</h2>${chart(d,'c',null,false)}</div>
+<div class="card"><h2>Cups by price</h2>${Object.keys(tier).sort((a,b)=>b-a).map(p=>`<div class="it"><span style="width:70px">${fmt(p)}</span><div style="flex:1;background:var(--bg);border-radius:6px"><div style="width:${tier[p]/tm*100}%;background:var(--a);height:14px;border-radius:6px"></div></div><b>${tier[p]}</b></div>`).join('')||'<small>No cups in this period</small>'}</div>
+<div class="card"><h2>Top customers</h2>${Object.entries(cu).sort((a,b)=>b[1].a-a[1].a).slice(0,5).map(([k,o])=>`<div class="it"><span class="x">${esc(k)}</span>${fmt(o.a)}${o.o?` <span class="tag out">owes ${fmt(o.o)}</span>`:''}</div>`).join('')||'<small>No customers in this period</small>'}</div>
+<small>Profit = income − expenses. Add expenses (groundnuts, power, transport) in Record so profit is accurate.</small>`}
+
 function tog(k,id,f){const o=S[k].find(x=>x.id==id);o[f]=!o[f];save();render()}
 function del(k,id){S[k]=S[k].filter(x=>x.id!=id);save();render()}
 function saveSet(){S.set.cur=val('cu')||'MK';S.set.morning=$('mt').value||'07:00';S.set.key=val('gk');const pr=val('pr').split(/[ ,]+/).map(Number).filter(x=>x>0).sort((a,b)=>b-a);if(pr.length)S.set.prices=pr;
