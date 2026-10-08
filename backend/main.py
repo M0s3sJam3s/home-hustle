@@ -146,6 +146,26 @@ def task_status(s, t, n):
     return ((s.get("log") or {}).get(n.date().isoformat()) or {}).get(t.get("id"), "")
 
 
+def stock_state(s, name):
+    n = str(name).strip().lower()
+    for i in s.get("stock", []):
+        if str(i.get("name", "")).strip().lower() == n:
+            qty = i.get("qty", 0)
+            return "out" if qty <= 0 else "low" if qty <= i.get("min", 0) else "ok"
+    return "none"
+
+
+def menu_needs(s, weekday):
+    m = (s.get("menu") or {}).get(str(weekday)) or {}
+    out = []
+    for k, label in (("b", "breakfast"), ("l", "lunch"), ("d", "dinner")):
+        for ing in m.get(k + "n") or []:
+            st = stock_state(s, ing)
+            if st in ("out", "low"):
+                out.append(f"{ing} ({st}) for {label}")
+    return out
+
+
 def low_items(s):
     return [i for i in s.get("stock", []) if i.get("qty", 0) <= i.get("min", 0)]
 
@@ -172,6 +192,9 @@ def morning_text(s, n):
           f"  Dinner: {m.get('d') or '-'}"]
     if lo:
         L += ["", "🛒 Low or out at home:"] + [f"  • {i.get('name')} ({i.get('qty')} {i.get('unit', '')})" for i in lo]
+    need = menu_needs(s, n.weekday())
+    if need:
+        L += ["", "🛒 Today's menu needs:"] + [f"  • {x}" for x in need]
     owed = unpaid(s)
     if owed:
         L += ["", f"💰 Customers owe you {money(s, sum(x.get('amt', 0) for x in owed))}"]
@@ -190,6 +213,9 @@ def evening_text(s, n):
     L += [f"✅ Plans done: {len(tasks) - len(left)}/{len(tasks)}"]
     if left:
         L += ["", "📋 Not done:"] + [f"  • {t.get('time')} {t.get('title')}" for t in left]
+    tmr = menu_needs(s, (n + timedelta(days=1)).weekday())
+    if tmr:
+        L += ["", "🛒 Tomorrow's menu needs (buy today):"] + [f"  • {x}" for x in tmr]
     owed = unpaid(s)
     if owed:
         L += ["", f"💰 Unpaid: {money(s, sum(x.get('amt', 0) for x in owed))} from {len(owed)} job(s)"]
